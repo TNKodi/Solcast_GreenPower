@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ThingsBoard Power Forecast API deployed on AWS Lambda with SAM
+
+Parameters:
+  StageName:
+    Type: String
+    Default: prod
+  TbHost:
+    Type: String
+    Description: ThingsBoard host URL
+  TbUsername:
+    Type: String
+    Description: ThingsBoard username
+  TbPassword:
+    Type: String
+    Description: ThingsBoard password
+    NoEcho: true
+  DefaultTargetLevel:
+    Type: Number
+    Default: 1
+  TzLocal:
+    Type: String
+    Default: Asia/Colombo
+  Debug:
+    Type: String
+    Default: "false"
+  LogLevel:
+    Type: String
+    Default: INFO
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 900
+    MemorySize: 1024
+
+Resources:
+  ForecastApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: lambda_handler.handler
+      Description: FastAPI-based ThingsBoard forecast API
+      Environment:
+        Variables:
+          TB_HOST: !Ref TbHost
+          TB_USERNAME: !Ref TbUsername
+          TB_PASSWORD: !Ref TbPassword
+          DEFAULT_TARGET_LEVEL: !Ref DefaultTargetLevel
+          TZ_LOCAL: !Ref TzLocal
+          DEBUG: !Ref Debug
+          LOG_LEVEL: !Ref LogLevel
+      Events:
+        ApiRoot:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+            RestApiId: !Ref ForecastApiGateway
+        ApiProxy:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            RestApiId: !Ref ForecastApiGateway
+
+  ForecastApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: thingsboard-forecast-api
+      StageName: !Ref StageName
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ForecastApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/
+  ForecastApiFunctionArn:
+    Description: Lambda function ARN
+    Value: !GetAtt ForecastApiFunction.Arn
