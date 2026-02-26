@@ -445,3 +445,12 @@
 2026-02-26 13:03:07 - thingsboard-forecast - INFO - Timezone: Asia/Colombo
 2026-02-26 13:03:07 - thingsboard-forecast - INFO - API is ready to accept requests
 2026-02-26 13:03:07 - thingsboard-forecast - INFO - ============================================================
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - ============================================================
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - Starting thingsboard-power-forecast-api v1.0.0
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - ============================================================
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - Configuration validated successfully
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - ThingsBoard Host: https://windforce.thingsnode.cc
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - Default Target Level: 4
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - Timezone: Asia/Colombo
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - API is ready to accept requests
+2026-02-26 13:03:09 - thingsboard-forecast - INFO - ============================================================
