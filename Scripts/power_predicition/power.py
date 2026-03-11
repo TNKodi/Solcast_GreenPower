@@ -225,7 +225,7 @@ def fetch_solcast_irradiance(
     tz=TZ_LOCAL,
 ):
     """
-    Fetch GHI data from Solcast and derive DNI/DHI for the existing PV pipeline.
+    Fetch GHI/DNI/DHI data directly from Solcast for the PV pipeline.
 
     Returns
     -------
@@ -257,7 +257,7 @@ def fetch_solcast_irradiance(
         params = {
             "latitude": lat,
             "longitude": lon,
-            "output_parameters": "ghi",
+            "output_parameters": "ghi,dni,dhi",
             "start": start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "end": end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "period": candidate_period,
@@ -301,26 +301,20 @@ def fetch_solcast_irradiance(
         raise RuntimeError("Solcast response does not contain estimated_actuals data.")
 
     df = pd.DataFrame(records)
-    if "period_end" not in df.columns or "ghi" not in df.columns:
-        raise RuntimeError("Solcast response missing required columns: period_end and ghi")
+    required_cols = ["period_end", "ghi", "dni", "dhi"]
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise RuntimeError(
+            "Solcast response missing required columns: " + ", ".join(missing_cols)
+        )
 
     df["period_end"] = pd.to_datetime(df["period_end"], utc=True)
     df = df.set_index("period_end").sort_index()
 
-    location = Location(latitude=lat, longitude=lon)
-    solpos = location.get_solarposition(df.index)
-    zenith = solpos["zenith"]
-
-    disc = pvlib.irradiance.disc(df["ghi"], zenith, df.index)
-    dni = disc["dni"].fillna(0).clip(lower=0)
-
-    cos_zenith = np.cos(np.radians(zenith)).clip(lower=0)
-    dhi = (df["ghi"] - dni * cos_zenith).clip(lower=0)
-
     out = pd.DataFrame(index=df.index)
     out["ghi"] = df["ghi"].fillna(0).clip(lower=0)
-    out["dni"] = dni
-    out["dhi"] = dhi
+    out["dni"] = df["dni"].fillna(0).clip(lower=0)
+    out["dhi"] = df["dhi"].fillna(0).clip(lower=0)
 
     if used_period != requested_period:
         target_freq = period_to_pandas_freq(requested_period)

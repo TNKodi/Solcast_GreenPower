@@ -13,7 +13,7 @@ LATITUDE = 7.274276317883622
 LONGITUDE = 80.2191266481395
 
 # Solar parameters you want
-OUTPUT_PARAMETERS = "ghi"
+OUTPUT_PARAMETERS = "ghi,dni,dhi"
 
 # Time resolution
 TIME_RESOLUTION = "PT5M"  # 5-minute intervals
