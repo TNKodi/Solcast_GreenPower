@@ -16,6 +16,7 @@ TARGET_LEVEL = 3                   # We want Level-4 assets
 START_DATE = "2026-01-20"
 END_DATE = "2026-01-31"
 TZ_LOCAL = "Asia/Colombo" 
+SOLCAST_PERIOD = os.getenv("SOLCAST_PERIOD", "PT5M")
 
 
 
@@ -220,7 +221,7 @@ def fetch_solcast_irradiance(
     api_key,
     start_date_str,
     end_date_str,
-    period="PT60M",
+    period="PT5M",
     tz=TZ_LOCAL,
 ):
     """
@@ -242,29 +243,59 @@ def fetch_solcast_irradiance(
     start_utc = start_local.tz_convert("UTC")
     end_utc = end_local.tz_convert("UTC")
 
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "output_parameters": "ghi",
-        "start": start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "end": end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "period": period,
-        "api_key": api_key,
-    }
+    requested_period = str(period or "PT5M").upper()
+    fallback_periods = [requested_period]
+    for fallback in ["PT30M", "PT60M"]:
+        if fallback not in fallback_periods:
+            fallback_periods.append(fallback)
 
-    response = requests.get(
-        "https://api.solcast.com.au/data/live/radiation_and_weather",
-        params=params,
-        headers={"Accept": "application/json"},
-        timeout=30,
-    )
+    response = None
+    payload = None
+    used_period = requested_period
 
-    if response.status_code != 200:
+    for candidate_period in fallback_periods:
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "output_parameters": "ghi",
+            "start": start_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "end": end_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "period": candidate_period,
+            "api_key": api_key,
+        }
+
+        response = requests.get(
+            "https://api.solcast.com.au/data/live/radiation_and_weather",
+            params=params,
+            headers={"Accept": "application/json"},
+            timeout=30,
+        )
+
+        if response.status_code == 200:
+            payload = response.json()
+            used_period = candidate_period
+            if candidate_period != requested_period:
+                print(
+                    f"[WARNING] Solcast period {requested_period} not supported; "
+                    f"fallback to {candidate_period} and resample locally"
+                )
+            break
+
+        error_text = response.text[:500] if response is not None else ""
+        unsupported_period = (
+            response.status_code == 403
+            and "Unsupported period requested" in error_text
+        )
+        if not unsupported_period:
+            raise RuntimeError(
+                f"Solcast API request failed ({response.status_code}): {error_text}"
+            )
+
+    if payload is None:
         raise RuntimeError(
             f"Solcast API request failed ({response.status_code}): {response.text[:500]}"
         )
 
-    payload = response.json()
     records = payload.get("estimated_actuals", [])
     if not records:
         raise RuntimeError("Solcast response does not contain estimated_actuals data.")
@@ -290,6 +321,10 @@ def fetch_solcast_irradiance(
     out["ghi"] = df["ghi"].fillna(0).clip(lower=0)
     out["dni"] = dni
     out["dhi"] = dhi
+
+    if used_period != requested_period:
+        target_freq = period_to_pandas_freq(requested_period)
+        out = out.resample(target_freq).interpolate(method="time").ffill().bfill()
 
     return out
 
@@ -571,6 +606,26 @@ def aggregate_to_daily(hourly_power_series, dt_hours):
     return daily_df
 
 
+def period_to_pandas_freq(period: str) -> str:
+    """
+    Convert ISO8601 duration (PTxM/PTxH) to pandas frequency string.
+    """
+    if not period:
+        return "5min"
+
+    period_upper = str(period).strip().upper()
+    if period_upper.startswith("PT") and period_upper.endswith("M"):
+        minutes = period_upper[2:-1]
+        if minutes.isdigit():
+            return f"{int(minutes)}min"
+    if period_upper.startswith("PT") and period_upper.endswith("H"):
+        hours = period_upper[2:-1]
+        if hours.isdigit():
+            return f"{int(hours)}h"
+
+    return "5min"
+
+
 #========================================================
 # Configuration Management Class
 #========================================================
@@ -707,7 +762,12 @@ class DeviceConfigManager:
             print(f"  {key}: {value}")
         print("="*60)
 
-def Solar_Power_Calculation(device_details, start_date=START_DATE, end_date=END_DATE):
+def Solar_Power_Calculation(
+    device_details,
+    start_date=START_DATE,
+    end_date=END_DATE,
+    solcast_period=SOLCAST_PERIOD,
+):
 
 
 
@@ -737,7 +797,7 @@ def Solar_Power_Calculation(device_details, start_date=START_DATE, end_date=END_
         solcast_key,
         start_date,
         end_date,
-        period="PT60M",
+        period=solcast_period,
         tz=TZ_LOCAL,
     )
     df=ensure_weather_data(df)
@@ -747,11 +807,11 @@ def Solar_Power_Calculation(device_details, start_date=START_DATE, end_date=END_
         print("[WARNING] Timestamp order issue detected – sorting index")
         df = df.sort_index()
     
-    EXPECTED_FREQ = "h"
+    EXPECTED_FREQ = period_to_pandas_freq(solcast_period)
     inferred_freq = pd.infer_freq(df.index)
-    if inferred_freq != EXPECTED_FREQ and inferred_freq != "H":
+    if inferred_freq != EXPECTED_FREQ and inferred_freq != EXPECTED_FREQ.upper():
         print(f"[WARNING] Irregular timestep detected (inferred: {inferred_freq})")
-        print("   Resampling to nearest hourly timestamps")
+        print(f"   Resampling to nearest {EXPECTED_FREQ} timestamps")
         df = df.resample(EXPECTED_FREQ).nearest()
     
     # =====================================================================
@@ -766,12 +826,14 @@ def Solar_Power_Calculation(device_details, start_date=START_DATE, end_date=END_
     
     # # Convert to fixed local timezone (Sri Lanka) for reporting/output only
     plant_ac_local = plant_ac.tz_convert(TZ_LOCAL)
-    # Store a naive, local-time index for CSV output readability
-    plant_ac_out = plant_ac_local.tz_localize(None)
+    # Prepare interval power output with local-time index for CSV readability
+    interval_power_local = plant_ac_local.to_frame(name="active_power_kw")
+    interval_power_out = interval_power_local.copy()
+    interval_power_out.index = interval_power_out.index.tz_localize(None)
 
     # Preview calculated AC power (local, first 5 rows)
     print("\nAC power preview (local time):")
-    print(plant_ac_out.head(10))
+    print(interval_power_out.head(10))
     
     # # =====================================================================
     # # AGGREGATE TO DAILY ENERGY
@@ -779,10 +841,18 @@ def Solar_Power_Calculation(device_details, start_date=START_DATE, end_date=END_
     
     print("\nAggregating to daily energy...")
     daily_power = aggregate_to_daily(plant_ac_local, dt_hours)
-    energy = (plant_ac_local * dt_hours).sum()
+    energy = float(daily_power["energy_kwh"].sum())
 
-    print("\n[INFO] CSV export is disabled; returning forecast data in memory")
-    return  daily_power, energy
+    # Save daily energy to CSV
+    csv_filename = f"daily_energy_{Device.device_id}_{start_date}_to_{end_date}.csv"
+    daily_power.to_csv(csv_filename)
+    print(f"\n[OK] Daily energy saved to: {csv_filename}")
+
+    # Save interval AC power to CSV
+    interval_filename = f"interval_power_{Device.device_id}_{start_date}_to_{end_date}.csv"
+    interval_power_out.to_csv(interval_filename)
+    print(f"[OK] Interval power saved to: {interval_filename}")
+    return interval_power_local, daily_power, energy
     
     
 
@@ -799,4 +869,5 @@ def power_prediction(atributes, start_date=START_DATE, end_date=END_DATE):
         device_details=atributes,
         start_date=start_date,
         end_date=end_date,
+        solcast_period=SOLCAST_PERIOD,
     )

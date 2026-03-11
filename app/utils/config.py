@@ -43,7 +43,7 @@ class Settings:
         "https://api.solcast.com.au/data/live/radiation_and_weather"
     )
     SOLCAST_OUTPUT_PARAMETERS: str = os.getenv("SOLCAST_OUTPUT_PARAMETERS", "ghi")
-    SOLCAST_PERIOD: str = os.getenv("SOLCAST_PERIOD", "PT60M")
+    SOLCAST_PERIOD: str = os.getenv("SOLCAST_PERIOD", "PT5M")
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

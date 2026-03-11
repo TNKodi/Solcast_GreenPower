@@ -17,8 +17,8 @@ Parameters:
     Description: ThingsBoard password
     NoEcho: true
   DefaultTargetLevel:
-    Type: Number
-    Default: 1
+    Type: String
+    Default: "1"
   TzLocal:
     Type: String
     Default: Asia/Colombo

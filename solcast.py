@@ -15,8 +15,8 @@ LONGITUDE = 80.2191266481395
 # Solar parameters you want
 OUTPUT_PARAMETERS = "ghi"
 
-# Time resolution - PT1H for hourly data
-TIME_RESOLUTION = "PT60M"  # 5-minute intervals
+# Time resolution
+TIME_RESOLUTION = "PT5M"  # 5-minute intervals
 # Output file name
 OUTPUT_CSV = "solcast_dec_2025_3rdweek_minitly.csv"
 
@@ -87,6 +87,7 @@ for col in ["period_end", "period_start"]:
 print("✅ Retrieved rows:", len(df))
 
 # -----------------------------
-# 💾 CSV SAVE DISABLED
+# 💾 SAVE TO CSV
 # -----------------------------
-print("✅ CSV export disabled; data kept in memory only")
+df.to_csv(OUTPUT_CSV, index=False)
+print(f"✅ Data saved to: {os.path.abspath(OUTPUT_CSV)}")

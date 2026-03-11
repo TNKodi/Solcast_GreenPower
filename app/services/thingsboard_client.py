@@ -2,9 +2,8 @@
 ThingsBoard REST API client.
 Handles authentication, asset retrieval, attribute reading, and telemetry writing.
 """
-import asyncio
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import httpx
 
 from app.utils.config import settings
@@ -159,6 +158,55 @@ class ThingsBoardClient:
                 break
         
         return current_assets
+
+    async def get_hierarchy_levels(
+        self,
+        root_asset_id: str,
+        max_depth: int
+    ) -> Tuple[List[List[str]], Dict[str, List[str]]]:
+        """
+        Traverse hierarchy and return assets by level with parent->children mapping.
+
+        Args:
+            root_asset_id: Root/main asset ID (level 1)
+            max_depth: Maximum depth to traverse from root level
+
+        Returns:
+            Tuple of:
+              - levels: List where index 0 is root level assets, index n is level n+1
+              - children_by_parent: Mapping parent asset ID -> direct child asset IDs
+        """
+        logger.info(
+            f"Building hierarchy from root {root_asset_id} up to depth {max_depth}"
+        )
+
+        levels: List[List[str]] = [[root_asset_id]]
+        children_by_parent: Dict[str, List[str]] = {}
+
+        for depth in range(1, max_depth):
+            current_level_assets = levels[depth - 1]
+            next_level_assets: List[str] = []
+
+            for parent_id in current_level_assets:
+                children = await self.get_asset_relations(parent_id)
+                children_by_parent[parent_id] = children
+                next_level_assets.extend(children)
+
+            # De-duplicate while preserving order
+            dedup_next_level = list(dict.fromkeys(next_level_assets))
+            levels.append(dedup_next_level)
+
+            logger.info(
+                f"Hierarchy level {depth + 1}: found {len(dedup_next_level)} assets"
+            )
+
+            if not dedup_next_level:
+                logger.warning(
+                    f"No assets found at hierarchy level {depth + 1}. Stopping traversal."
+                )
+                break
+
+        return levels, children_by_parent
     
     async def read_device_attributes(
         self, 
@@ -239,14 +287,27 @@ class ThingsBoardClient:
             device_id: Device/Asset ID
             telemetry_list: List of telemetry records
         """
-        logger.info(f"Writing {len(telemetry_list)} telemetry records to {device_id}")
-        
-        for telemetry in telemetry_list:
-            await self.write_device_telemetry(device_id, telemetry)
-            # Small delay to avoid overwhelming the server
-            await asyncio.sleep(0.1)
-        
-        logger.info(f"Successfully wrote {len(telemetry_list)} records to {device_id}")
+        if not telemetry_list:
+            logger.warning(f"No telemetry records to write for {device_id}")
+            return
+
+        logger.info(
+            f"Writing {len(telemetry_list)} telemetry records to {device_id} in a single API call"
+        )
+
+        url = f"{self.base_url}/api/plugins/telemetry/ASSET/{device_id}/timeseries/ANY"
+        headers = await self._get_headers()
+
+        try:
+            # ThingsBoard accepts a list of {ts, values} objects for bulk timeseries insert.
+            response = await self._client.post(url, headers=headers, json=telemetry_list)
+            response.raise_for_status()
+
+            logger.info(f"Successfully wrote {len(telemetry_list)} records to {device_id}")
+
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to write bulk telemetry to {device_id}: {e}")
+            raise
     
     async def asset_exists(self, asset_id: str) -> bool:
         """

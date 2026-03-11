@@ -20,40 +20,6 @@ Scripts/power_predicition/__pycache__/atribute_write.cpython-313.pyc
 Scripts/power_predicition/__pycache__/get_asset.cpython-313.pyc
 Scripts/power_predicition/__pycache__/power.cpython-313.pyc
 .env
+*.csv
 .aws-sam/
 sam/.aws-sam/
-daily_energy_GGBS0210_2026-02-24_to_2026-02-24.csv
-
-# General generated data files
-*.csv
-
-# Logs
-logs/
-*.log
-
-# Python cache/compiled files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Python environments
-.venv/
-venv/
-env/
-
-# Python tooling caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Local environment/config
-.env
-.env.*
-
-# IDE/editor files
-.vscode/
-.idea/
-
-# OS artifacts
-.DS_Store
-Thumbs.db

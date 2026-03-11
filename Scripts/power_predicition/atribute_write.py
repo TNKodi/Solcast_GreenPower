@@ -3,6 +3,7 @@ import json
 import sys
 from dotenv import load_dotenv
 import os
+import pandas as pd
 
 
 
@@ -17,7 +18,18 @@ load_dotenv()
 TB_HOST = os.getenv("TB_HOST")   # e.g. http://localhost:8080
 USERNAME = os.getenv("TB_USERNAME")
 PASSWORD = os.getenv("TB_PASSWORD")
+TZ_LOCAL = os.getenv("TZ_LOCAL", "Asia/Colombo")
 HEADERS = {}
+
+
+def _to_daily_write_timestamp_ms(timestamp):
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize(TZ_LOCAL)
+    else:
+        ts = ts.tz_convert(TZ_LOCAL)
+    write_ts = ts.normalize() + pd.Timedelta(hours=1)
+    return int(write_ts.timestamp() * 1000)
 
 def tb_login():
     url = f"{TB_HOST}/api/auth/login"
@@ -43,9 +55,9 @@ def atribute_write(asset_id,  daily_power, energy):
         for i in range(10):
             print("Sending telemetry data on ",daily_power.index[i].strftime('%Y-%m-%d'))
             telemetry_data = {
-                "ts": int(daily_power.index[i].timestamp() * 1000),
+                "ts": _to_daily_write_timestamp_ms(daily_power.index[i]),
                 "values": {
-                    "daily_energy_kwh_forcast": float(daily_power.iloc[i, 0])
+                    "solcast_daily": float(daily_power.iloc[i, 0])
                 }
             }
             print(telemetry_data)
